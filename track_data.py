@@ -4,7 +4,11 @@ import numpy as np
 import matplotlib as mpl
 import pandas as pd
 import altair as alt
+from sklearn.cluster import KMeans
+from yellowbrick.cluster import KElbowVisualizer
+from sklearn import preprocessing
 
+pd.set_option("precision", 2)
 fastf1.Cache.enable_cache("C:\\Cachef1")  # replace with your cache directory
 
 
@@ -186,6 +190,49 @@ def corner_counter_speeds(df):
     return corner_analysis
 
 
+def straight_counter_speeds(df):
+    temp_df = (
+        df.groupby("counter_straights")
+        .max("Speed")
+        .reset_index()[["counter_straights", "Speed"]]
+    )
+
+    temp_df["grp_straights"] = np.where(
+        temp_df["Speed"] <= 50,
+        "50",
+        np.where(
+            temp_df["Speed"] <= 100,
+            "100",
+            np.where(
+                temp_df["Speed"] <= 150,
+                "150",
+                np.where(
+                    temp_df["Speed"] <= 200,
+                    "200",
+                    np.where(
+                        temp_df["Speed"] <= 250,
+                        "250",
+                        np.where(
+                            temp_df["Speed"] <= 300,
+                            "300",
+                            np.where(temp_df["Speed"] <= 350, 350, "error"),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    temp_df = pd.pivot_table(
+        temp_df, columns="grp_straights", values="counter_straights", aggfunc="count"
+    ).reset_index()
+    temp_df = temp_df[[x for x in temp_df.columns if "0" in x]]
+
+    temp_df_columns = ["str_" + x for x in temp_df.columns if "0" in x]
+    temp_df.columns = temp_df_columns
+    return temp_df
+
+
 def dataframe_creation(laps, best_driver):
     df = load_best_lap(laps, best_driver)
     df = flags_strcor_based_on_normal_speed(df)
@@ -193,9 +240,6 @@ def dataframe_creation(laps, best_driver):
     df = order_data(df)
     df = counter_strcor(df)
     return df
-
-
-total_df = pd.DataFrame()
 
 
 def retreive_kpis(corner_counter_speeds, session, fastestlap, df):
@@ -206,7 +250,8 @@ def retreive_kpis(corner_counter_speeds, session, fastestlap, df):
     max_speed = df.Speed.max()
     perc_full_throttle = df["_Full_Throttle"].sum() / df["_Full_Throttle"].count()
     df_corners = corner_counter_speeds(df)
-    temporary_df = pd.concat([temporary_df, df_corners])
+    df_straights = straight_counter_speeds(df)
+    temporary_df = pd.concat([temporary_df, df_corners, df_straights], axis=1)
     temporary_df["perc_full_throttle"] = perc_full_throttle
     temporary_df["distance"] = distance
     temporary_df["max_speed"] = max_speed
@@ -214,6 +259,52 @@ def retreive_kpis(corner_counter_speeds, session, fastestlap, df):
     temporary_df["grandprix"] = session.weekend.name
     return temporary_df
 
+
+def Preparing_df_for_kmeans(df):
+    df = df.fillna(0)
+    df = df[df["grandprix"] != "Styrian Grand Prix"]
+    df = df[
+        [
+            "grandprix",
+            "max_speed",
+            "avg_speed",
+            "distance",
+            "perc_full_throttle",
+            "cor_50",
+            "cor_100",
+            "cor_150",
+            "cor_200",
+            "cor_250",
+            "cor_300",
+            "str_150",
+            "str_200",
+            "str_250",
+            "str_300",
+            "str_350",
+        ]
+    ].reset_index(drop=True)
+    kmeans_df = df.drop(columns="grandprix")
+    columnslist = [
+        "cor_50",
+        "cor_100",
+        "cor_150",
+        "cor_200",
+        "cor_250",
+        "cor_300",
+        "str_150",
+        "str_200",
+        "str_250",
+        "str_300",
+        "str_350",
+    ]
+
+    for col in columnslist:
+        kmeans_df[col].astype("int")
+        kmeans_df[col].astype("category")
+    return df, kmeans_df
+
+
+df = pd.DataFrame()
 
 for i in range(1, 23):
     session = fastf1.get_session(2021, i, "Q")
@@ -224,10 +315,35 @@ for i in range(1, 23):
         pass
     else:
         print_the_best_driver(session, fastestlap, best_driver)
-        df = dataframe_creation(laps, best_driver)
-        track_vizualization(session, df)
-        temporary_df = retreive_kpis(corner_counter_speeds, session, fastestlap, df)
-        total_df = pd.concat([total_df, temporary_df])
+        track_df = dataframe_creation(laps, best_driver)
+        track_vizualization(session, track_df)
+        track_df_new = retreive_kpis(
+            corner_counter_speeds, session, fastestlap, track_df
+        )
+        df = pd.concat([df, track_df_new])
+
 
 ### Working on k means
-total_df=total_df.fillna(0)
+df, kmeans_df = Preparing_df_for_kmeans(df)
+
+
+x = kmeans_df.values  # returns a numpy array
+min_max_scaler = preprocessing.MinMaxScaler()
+x_scaled = min_max_scaler.fit_transform(x)
+kmeans_df = pd.DataFrame(x_scaled)
+
+visualizer = KElbowVisualizer(KMeans(),
+ k=(2, 10), metric='distortion', timings=True, locate_elbow=True,)
+visualizer.fit(kmeans_df)
+visualizer.show()
+clusters = visualizer.elbow_value_
+kmeans = KMeans(clusters)
+kmeans.fit(kmeans_df)
+identified_clusters = kmeans.fit_predict(kmeans_df)
+data_with_clusters = df.copy()
+data_with_clusters.columns = df.columns
+data_with_clusters["Cluster"] = identified_clusters
+data_with_clusters["grandprix"] = df["grandprix"]
+pd.crosstab(data_with_clusters["grandprix"], data_with_clusters["Cluster"])
+Cluster_centers=data_with_clusters.groupby('Cluster').mean()
+
