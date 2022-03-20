@@ -241,7 +241,7 @@ def dataframe_creation(laps, best_driver):
 
 def retreive_kpis(session, fastestlap, df):
     temporary_df = pd.DataFrame()
-    df["_Full_Throttle"] = np.where(df["Throttle"] >= 100, 1, 0)
+    df["_Full_Throttle"] = np.where(df["Throttle"] >= 95, 1, 0)
     distance = df.Distance.max()
     avg_speed = distance / 1000 / float(fastestlap / np.timedelta64(1, "h"))
     max_speed = df.Speed.max()

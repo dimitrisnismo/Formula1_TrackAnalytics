@@ -40,6 +40,8 @@ for i in range(1, 23):
         df = pd.concat([df, track_df_new])
 
 
+
+
 ### Working on k means
 df, kmeans_df = Preparing_df_for_kmeans(df)
 kmeans_df = onehotencoder_method(kmeans_df)
@@ -66,6 +68,8 @@ data_with_clusters.columns = df.columns
 data_with_clusters["Cluster"] = identified_clusters
 data_with_clusters["grandprix"] = df["grandprix"]
 Cluster_centers = data_with_clusters.groupby("Cluster").mean()
+data_with_clusters[["grandprix",'Cluster']]
+
 
 # number of tracks per cluster
 clusters_counter = (
@@ -99,3 +103,6 @@ tracks_points = pd.merge(
 for track in tracks_points.grandprix.unique():
     temp_track_data = tracks_points[tracks_points["grandprix"] == track]
     track_vizualization_byCluster(temp_track_data, track)
+
+
+r1=tracks_points[tracks_points["grandprix"] == 'Russian Grand Prix']
